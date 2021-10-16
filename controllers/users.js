@@ -1,89 +1,89 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const User = require('../models/user');
+const BadRequestError = require('../errors/bad-request-err');
 const NotFoundError = require('../errors/not-found-err');
-const NotValidError = require('../errors/not-valid-err');
-const AuthError = require('../errors/auth-err');
-const UniqueError = require('../errors/unique-err');
+const ConflictError = require('../errors/conflict-err');
+const UnauthorizedError = require('../errors/unauthorized-err');
+const {
+  badRequestErrorMsg, usersWrongEmailOrPasswordMsg, usersNotFoundErrorMsg, usersConflictErrorMsg,
+} = require('../utils/errorMessages');
 
-module.exports.getProfile = (req, res, next) => {
+const { JWT_SECRET } = process.env;
+
+module.exports.getMyInfo = (req, res, next) => {
   User.findById(req.user._id)
-    .then((user) => res.send(user))
+    .then((user) => { res.send(user); })
     .catch((err) => {
-      if (err.name === 'DocumentNotFoundError') {
-        next(new NotFoundError('Пользователь не найден'));
+      if (err.name === 'CastError') {
+        next(new BadRequestError(badRequestErrorMsg));
+      } else {
+        next(err);
       }
-      if (err.name === 'CastError' || err.name === 'ValidationError') {
-        next(new NotValidError('Переданы некорректные данные'));
-      }
-      next(err);
     });
 };
 
 module.exports.updateProfile = (req, res, next) => {
-  User.findByIdAndUpdate(req.user._id, {
-    name: req.body.name,
-    email: req.body.email,
-  }, {
-    new: true,
-    runValidators: true,
-  })
-    .then((user) => res.send(user))
+  const { email, name } = req.body;
+  User.findByIdAndUpdate(req.user._id,
+    { email, name },
+    {
+      new: true,
+      runValidators: true,
+      upsert: false,
+    })
+    .orFail(new NotFoundError(usersNotFoundErrorMsg))
+    .then((user) => {
+      res.send(user);
+    })
     .catch((err) => {
-      if (err.name === 'CastError' || err.name === 'ValidationError') {
-        next(new NotValidError('Переданы некорректные данные'));
+      if (err.name === 'ValidationError') {
+        next(new BadRequestError(badRequestErrorMsg));
+      } else if (err.codeName === 'DuplicateKey') {
+        next(new ConflictError(usersConflictErrorMsg));
+      } else {
+        next(err);
       }
-      if (err.name === 'MongoError') {
-        next(new UniqueError('Этот Email уже зарегистрирован'));
-      }
-      next(err);
     });
 };
 
 module.exports.createUser = (req, res, next) => {
-  const {
-    name,
-    email,
-    password,
-  } = req.body;
+  const { email, password, name } = req.body;
 
-  bcrypt.hash(password, 10)
-    .then((hash) => User.create({
-      name,
-      email,
-      password: hash,
-    }))
-    .then((user) => res.send({
-      user: {
-        name: user.name,
-        email: user.email,
-      },
-    }))
-    .catch((err) => {
-      if (err.name === 'CastError' || err.name === 'ValidationError' || err.error === 'Bad Request') {
-        next(new NotValidError('Переданы некорректные данные'));
-      }
-      if (err.name === 'MongoError') {
-        next(new UniqueError('Этот Email уже зарегистрирован'));
-      }
-      next(err);
-    });
+  User.findOne({ email }).then((usr) => {
+    if (usr) {
+      throw new ConflictError(usersConflictErrorMsg);
+    }
+    bcrypt.hash(password, 10)
+      .then((hash) => User.create({ email, password: hash, name }))
+      .then((user) => {
+        res.send({ _id: user._id, email: user.email, name: user.name });
+      })
+      .catch((err) => {
+        if (err.name === 'ValidationError') {
+          next(new BadRequestError(badRequestErrorMsg));
+        } else {
+          next(err);
+        }
+      });
+  }).catch(next);
 };
 
 module.exports.login = (req, res, next) => {
   const { email, password } = req.body;
-  const { NODE_ENV, JWT_SECRET } = process.env;
 
-  User.findUserByCredentials(email, password)
+  User.findOne({ email }).select('+password')
+    .orFail(new BadRequestError(usersWrongEmailOrPasswordMsg))
     .then((user) => {
-      const token = jwt.sign({ _id: user._id }, NODE_ENV === 'production' ? JWT_SECRET : 'dev-secret', { expiresIn: '7d' });
-      res.send({
-        user: {
-          name: user.name,
-          email: user.email,
-        },
-        token,
-      });
+      bcrypt.compare(password, user.password)
+        .then((matched) => {
+          if (!matched) {
+            next(new UnauthorizedError(usersWrongEmailOrPasswordMsg));
+          } else {
+            const token = jwt.sign({ _id: user._id }, JWT_SECRET, { expiresIn: '7d' });
+            res.status(201).send({ token });
+          }
+        });
     })
-    .catch(() => next(new AuthError('Неправильный Email или пароль')));
+    .catch(next);
 };

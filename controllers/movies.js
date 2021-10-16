@@ -1,15 +1,19 @@
 const Movie = require('../models/movie');
-const NotValidError = require('../errors/not-valid-err');
-const NotFoundError = require('../errors/not-found-err');
-const RootError = require('../errors/root-err');
 
-module.exports.getSavedFilms = (req, res, next) => {
+const BadRequestError = require('../errors/bad-request-err');
+const ForbiddenError = require('../errors/forbidden-err');
+const NotFoundError = require('../errors/not-found-err');
+const { badRequestErrorMsg, moviesNotFoundErrorMsg, moviesForbiddenErrorMsg } = require('../utils/errorMessages');
+
+module.exports.getMovies = (req, res, next) => {
   Movie.find({ owner: req.user._id })
-    .then((movies) => res.send(movies))
+    .then((movies) => {
+      res.send(movies);
+    })
     .catch(next);
 };
 
-module.exports.createFilm = (req, res, next) => {
+module.exports.createMovie = (req, res, next) => {
   const {
     country,
     director,
@@ -18,12 +22,11 @@ module.exports.createFilm = (req, res, next) => {
     description,
     image,
     trailer,
-    nameRU,
-    nameEN,
     thumbnail,
     movieId,
+    nameRU,
+    nameEN,
   } = req.body;
-
   Movie.create({
     country,
     director,
@@ -32,33 +35,39 @@ module.exports.createFilm = (req, res, next) => {
     description,
     image,
     trailer,
-    nameRU,
-    nameEN,
     thumbnail,
     movieId,
+    nameRU,
+    nameEN,
     owner: req.user._id,
   })
-    .then((film) => res.send(film))
+    .then((movie) => {
+      res.send(movie);
+    })
     .catch((err) => {
-      if (err.name === 'CastError' || err.name === 'ValidationError' || err.error === 'Bad Request') {
-        next(new NotValidError('Переданы некорректные данные'));
+      if (err.name === 'ValidationError') {
+        next(new BadRequestError(badRequestErrorMsg));
+      } else {
+        next(err);
       }
-      next(err);
     });
 };
 
-module.exports.deleteFilm = (req, res, next) => {
+module.exports.deleteMovieByID = (req, res, next) => {
   Movie.findById(req.params.movieId)
+    .orFail(new NotFoundError(moviesNotFoundErrorMsg))
     .then((movie) => {
-      if (!movie) throw new NotFoundError('Данные не найдены');
-      if (!movie.owner.equals(req.user._id)) throw new RootError('Ошибка доступа');
-      movie.remove()
-        .then(() => res.send(movie));
+      if (movie.owner.toString() === req.user._id.toString()) {
+        return movie.remove()
+          .then(() => res.send({ message: `Фильм c id: ${req.params.movieId} успешно удалена.` }));
+      }
+      throw new ForbiddenError(moviesForbiddenErrorMsg);
     })
     .catch((err) => {
-      if (err.name === 'CastError' || err.name === 'ValidationError') {
-        next(new NotValidError('Переданы некорректные данные'));
+      if (err.name === 'CastError') {
+        next(new BadRequestError(badRequestErrorMsg));
+      } else {
+        next(err);
       }
-      next(err);
     });
 };

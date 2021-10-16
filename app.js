@@ -1,39 +1,39 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const mongoose = require('mongoose');
-const { errors } = require('celebrate');
-const { requestLogger, errorLogger } = require('./middlewares/logger');
-const errorHandler = require('./middlewares/error-handler');
-const indexRouter = require('./routes/index');
-const limiter = require('./middlewares/rate-limiter');
 
 const app = express();
-const { PORT = 3000 } = process.env;
+const mongoose = require('mongoose');
+const { errors } = require('celebrate');
+const helmet = require('helmet');
 
-mongoose.connect('mongodb://localhost:27017/moviesdb', {
+const cors = require('./middlewares/cors');
+const errorHandler = require('./middlewares/error');
+const { requestLogger, errorLogger } = require('./middlewares/logger');
+const { limiter } = require('./utils/limiter');
+const router = require('./routes/index');
+
+const { MONGO_ADRESS, PORT } = require('./utils/config');
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+mongoose.connect(MONGO_ADRESS, {
+  useUnifiedTopology: true,
   useNewUrlParser: true,
   useCreateIndex: true,
   useFindAndModify: false,
-  useUnifiedTopology: true,
 });
 
 app.use(helmet());
-app.use(cors());
-
-app.use(express.urlencoded({ extended: false }));
-app.use(express.json());
-
 app.use(requestLogger);
-
 app.use(limiter);
 
-app.use(indexRouter);
+app.use(cors);
 
-app.use(errors());
+app.use(router);
 
 app.use(errorLogger);
+app.use(errors());
 app.use(errorHandler);
 
 app.listen(PORT);

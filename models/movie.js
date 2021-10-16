@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
-const validator = require('validator');
+const { isURL } = require('validator');
+const { regExpYear } = require('../utils/regexp');
 
 const movieSchema = new mongoose.Schema({
   country: {
@@ -16,7 +17,14 @@ const movieSchema = new mongoose.Schema({
   },
   year: {
     type: String,
+    minLength: 4,
+    maxLength: 4,
     required: true,
+    validate: {
+      validator(v) {
+        return regExpYear.test(v);
+      },
+    },
   },
   description: {
     type: String,
@@ -26,25 +34,25 @@ const movieSchema = new mongoose.Schema({
     type: String,
     required: true,
     validate: {
-      validator: (url) => validator.isURL(url),
+      validator: (v) => isURL(v),
     },
   },
   trailer: {
     type: String,
     required: true,
     validate: {
-      validator: (url) => validator.isURL(url),
+      validator: (v) => isURL(v),
     },
   },
   thumbnail: {
     type: String,
     required: true,
     validate: {
-      validator: (url) => validator.isURL(url),
+      validator: (v) => isURL(v),
     },
   },
   owner: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: mongoose.ObjectId,
     ref: 'user',
     required: true,
   },
@@ -55,17 +63,11 @@ const movieSchema = new mongoose.Schema({
   nameRU: {
     type: String,
     required: true,
-    validate(name) {
-      return /^[А-Яа-я\s\w\S]{1,}$/.test(name);
-    },
   },
   nameEN: {
     type: String,
     required: true,
-    validate(name) {
-      return /^[\s\w\S]{1,}$/.test(name);
-    },
   },
-});
+}, { versionKey: false });
 
 module.exports = mongoose.model('movie', movieSchema);
