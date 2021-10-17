@@ -3,4 +3,5 @@ module.exports.allowedCors = [
   'http://praktikum.tk',
   'http://localhost:3000',
   'http://FD-diplom.nomoredomains.club',
+  'https://FD-diplom.nomoredomains.club'
 ];
